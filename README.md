@@ -1,1 +1,2 @@
-# burn-to-earn
+# scrt-wolf-pack-quests
+init
