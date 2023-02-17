@@ -57,6 +57,7 @@ pub enum ExecuteMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg { 
+    GetBurnInfo {},
     GetContracts {},
     GetUserBurnHistory { 
         permit: Permit,
@@ -72,4 +73,10 @@ pub enum QueryMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct ContractsResponse {
     pub contract_infos: Vec<ContractInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct BurnInfoResponse {
+    pub num_burned: i32,
+    pub amount_paid: Uint128
 }

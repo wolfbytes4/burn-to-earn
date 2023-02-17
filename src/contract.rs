@@ -4,7 +4,7 @@ use cosmwasm_std::{
     Binary, Uint128, CosmosMsg
 };
 use crate::error::ContractError;
-use crate::msg::{ContractsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ContractInfo, HistoryToken };
+use crate::msg::{ContractsResponse, BurnInfoResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ContractInfo, HistoryToken };
 use crate::state::{ State, CONFIG_ITEM, ADMIN_ITEM, BURN_HISTORY_STORE, MY_ADDRESS_ITEM, PREFIX_REVOKED_PERMITS};
 use secret_toolkit::{
     snip721::{
@@ -100,16 +100,17 @@ fn try_batch_receive(
     token_ids: Vec<String>
 ) -> Result<Response, ContractError> { 
     deps.api.debug(&format!("Batch received"));
-    let state = CONFIG_ITEM.load(deps.storage)?;
+    let mut state = CONFIG_ITEM.load(deps.storage)?;
     let mut response_msgs: Vec<CosmosMsg> = Vec::new();
     let mut shill_amount_to_send = Uint128::from(0u32);
     let mut response_attrs = vec![];
-    let burn_history_store = BURN_HISTORY_STORE.add_suffix(sender.to_string().as_bytes());
+    let burn_history_store = BURN_HISTORY_STORE.add_suffix(from.to_string().as_bytes());
 
-    if state.contract_infos.iter().any(|i| &i.address==from) {
-        let contract_info = state.contract_infos.iter().find(|x| &x.address == from).unwrap();
+    if state.contract_infos.iter().any(|i| &i.address==sender) {
+        let contract_info = state.contract_infos.iter().find(|x| &x.address == sender).unwrap();
 
         if token_ids.len() > 0 {
+            state.num_burned = state.num_burned + token_ids.len() as i32;
             //transfer back 
             let mut burns: Vec<Burn> = Vec::new(); 
             burns.push(
@@ -129,11 +130,11 @@ fn try_batch_receive(
             response_msgs.push(cosmos_batch_msg);  
             
             shill_amount_to_send+=contract_info.shill_reward * Uint128::from(token_ids.len() as u32);
-
+            
             if shill_amount_to_send > Uint128::from(0u32) {
                 response_msgs.push(
                     transfer_msg(
-                        sender.to_string(),
+                        from.to_string(),
                         shill_amount_to_send,
                         None,
                         None,
@@ -141,12 +142,12 @@ fn try_batch_receive(
                         state.shill_contract.code_hash.to_string(),
                         state.shill_contract.address.to_string()
                     )?);
-      
+                state.amount_paid = state.amount_paid + shill_amount_to_send;
             } 
 
             let history_token: HistoryToken = { HistoryToken {
                 token_ids: token_ids,
-                owner: sender.clone(),
+                owner: from.clone(),
                 contract_address: contract_info.address.clone(), 
                 burn_date: Some(_env.block.time.seconds()), 
                 reward_amount: shill_amount_to_send
@@ -163,7 +164,7 @@ fn try_batch_receive(
         return Err(ContractError::CustomError {val: "This contract address is not enrolled in the burn to earn program".to_string()});
     }
 
- 
+    CONFIG_ITEM.save(deps.storage, &state)?;
     Ok(Response::new().add_messages(response_msgs).add_attributes(response_attrs))
 }
 
@@ -216,7 +217,16 @@ pub fn try_change_shill_reward(
     if sender.clone() != state.owner {
         return Err(ContractError::Unauthorized {});
     }
-   
+    let mut state = CONFIG_ITEM.load(deps.storage)?;
+    if state.contract_infos.iter().any(|i| i.address==contract_info.address) {
+        let mut c_info = state.contract_infos.iter_mut().find(|x| x.address == contract_info.address).unwrap();
+        c_info.shill_reward = contract_info.shill_reward;
+        CONFIG_ITEM.save(deps.storage, &state)?;
+    }
+    else{
+        return Err(ContractError::CustomError {val: "This contract address isn't supported".to_string()});
+    }
+    
     Ok(Response::default())
 }
 
@@ -252,7 +262,8 @@ pub fn query(
     msg: QueryMsg,
 ) -> StdResult<Binary> {
     match msg { 
-        QueryMsg::GetContracts {} => to_binary(&query_contracts(deps)?),  
+        QueryMsg::GetContracts {} => to_binary(&query_contracts(deps)?), 
+        QueryMsg::GetBurnInfo {} => to_binary(&query_burn_info(deps)?),  
         QueryMsg::GetNumUserBurnHistory { permit } => to_binary(&query_num_user_burn_history(deps, permit)?),
         QueryMsg::GetUserBurnHistory {permit, start_page, page_size} => to_binary(&query_user_burn_history(deps, permit, start_page, page_size)?),
     }
@@ -260,10 +271,16 @@ pub fn query(
  
 fn query_contracts(
     deps: Deps,
-) -> StdResult<ContractsResponse> {
- 
+) -> StdResult<ContractsResponse> { 
     let state = CONFIG_ITEM.load(deps.storage)?;
     Ok(ContractsResponse { contract_infos: state.contract_infos })
+} 
+
+fn query_burn_info(
+    deps: Deps,
+) -> StdResult<BurnInfoResponse> { 
+    let state = CONFIG_ITEM.load(deps.storage)?;
+    Ok(BurnInfoResponse { num_burned: state.num_burned, amount_paid: state.amount_paid })
 } 
  
 fn query_user_burn_history(
