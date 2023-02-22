@@ -1,9 +1,9 @@
 [package]
-name = "scrt-wolfpack-quests-v1"
+name = "burn-to-earn"
 version = "0.1.0"
 authors = ["wolfbytes"]
 edition = "2021"
-description = "Smart Contract for basic quests"
+description = "Smart Contract for burn to earn"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
